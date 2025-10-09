@@ -258,6 +258,12 @@ class AmazonUKScraper:
         
         product["review_count"] = review_count
         
+        # Extract badges (Amazon's Choice, Best Seller, etc.)
+        badges = self.extract_badges(elem, debug=(position <= 3))
+        product["badges"] = badges
+        if badges and position <= 3:
+            print(f"    Badges: {', '.join(badges)}")
+        
         # Extract product URL
         product_url = None
         try:
@@ -306,6 +312,101 @@ class AmazonUKScraper:
         product["thumbnail_path"] = image_data["thumbnail"]
         
         return product
+    
+    def extract_badges(self, elem, debug=False):
+        """
+        Extract all badges from a product element.
+        Common badges: Amazon's Choice, Best Seller, Climate Pledge Friendly, etc.
+        """
+        badges = []
+        
+        try:
+            # Method 1: Look for badge labels (most common)
+            badge_elements = elem.find_elements(By.CSS_SELECTOR, "span.a-badge-label")
+            for badge_elem in badge_elements:
+                badge_text = badge_elem.text.strip()
+                if badge_text:
+                    badges.append(badge_text)
+                    if debug:
+                        print(f"    Found badge (a-badge-label): {badge_text}")
+            
+            # Method 2: Look for specific badge classes
+            badge_selectors = [
+                "span[class*='badge']",
+                "div[class*='badge']",
+                "span.a-badge-text",
+                "span.a-color-secondary.a-text-bold"
+            ]
+            
+            for selector in badge_selectors:
+                try:
+                    elements = elem.find_elements(By.CSS_SELECTOR, selector)
+                    for el in elements:
+                        text = el.text.strip()
+                        # Filter for known badge patterns
+                        if text and any(keyword in text.lower() for keyword in [
+                            "amazon's choice", "amazons choice", 
+                            "best seller", "bestseller",
+                            "climate pledge", 
+                            "limited time deal",
+                            "prime",
+                            "small business"
+                        ]):
+                            if text not in badges:  # Avoid duplicates
+                                badges.append(text)
+                                if debug:
+                                    print(f"    Found badge ({selector}): {text}")
+                except:
+                    continue
+            
+            # Method 3: Search in all span elements for specific patterns
+            try:
+                all_spans = elem.find_elements(By.TAG_NAME, "span")
+                for span in all_spans:
+                    text = span.text.strip()
+                    # Look for specific badge patterns in the text
+                    if text and len(text) < 50:  # Badges are usually short
+                        lower_text = text.lower()
+                        if any(pattern in lower_text for pattern in [
+                            "amazon's choice", "amazons choice",
+                            "best seller", "bestseller", "#1 best seller",
+                            "climate pledge friendly",
+                            "limited time deal",
+                            "small business"
+                        ]):
+                            # Clean up the text
+                            clean_text = text.replace("\n", " ").strip()
+                            if clean_text not in badges:
+                                badges.append(clean_text)
+                                if debug:
+                                    print(f"    Found badge (span text): {clean_text}")
+            except:
+                pass
+            
+            # Method 4: Check for "Amazon's Choice" specifically with its keyword
+            try:
+                # Amazon's Choice often includes the keyword it's for
+                choice_elem = elem.find_elements(By.XPATH, ".//*[contains(text(), \"Amazon's Choice\") or contains(text(), 'Amazons Choice')]")
+                for ce in choice_elem:
+                    text = ce.text.strip()
+                    if text and text not in badges:
+                        badges.append(text)
+                        if debug:
+                            print(f"    Found badge (XPath): {text}")
+            except:
+                pass
+            
+        except Exception as e:
+            if debug:
+                print(f"    Badge extraction error: {str(e)}")
+        
+        # Clean up badges: remove duplicates and empty strings
+        badges = list(dict.fromkeys([b for b in badges if b]))  # Remove duplicates while preserving order
+        
+        if debug and badges:
+            print(f"    Final badges: {badges}")
+        
+        return badges
     
     def download_all_images(self, product_url, keyword, asin, search_elem):
         """Download thumbnail AND all product page images"""
@@ -517,12 +618,14 @@ class AmazonUKScraper:
                     prices = sum(1 for p in products if p.get("price"))
                     ratings = sum(1 for p in products if p.get("rating"))
                     reviews = sum(1 for p in products if p.get("review_count", 0) > 0)
+                    badges = sum(1 for p in products if p.get("badges"))
                     
                     print(f"\n  Completeness:")
                     print(f"    Titles:  {titles}/{len(products)}")
                     print(f"    Prices:  {prices}/{len(products)}")
                     print(f"    Ratings: {ratings}/{len(products)}")
                     print(f"    Reviews: {reviews}/{len(products)}")
+                    print(f"    Badges:  {badges}/{len(products)}")
                 
                 if i < len(keywords):
                     print(f"\nWaiting 30s...")
@@ -558,11 +661,7 @@ class AmazonUKScraper:
 
 if __name__ == "__main__":
     keywords = [
-        "berberine 1500mg",
-        "berberine 1500mg high strength",
-        "berberine mojo 1500 mg",
         "barberry supplement",
-        "berberina"
     ]
     
     # Headless mode - no browser window shown
@@ -574,6 +673,7 @@ if __name__ == "__main__":
         if products:
             titles = sum(1 for p in products if p.get("title"))
             prices = sum(1 for p in products if p.get("price"))
-            print(f"  {keyword}: {len(products)} products | {titles} titles | {prices} prices")
+            badges = sum(1 for p in products if p.get("badges"))
+            print(f"  {keyword}: {len(products)} products | {titles} titles | {prices} prices | {badges} badges")
         else:
             print(f"  {keyword}: Failed")
