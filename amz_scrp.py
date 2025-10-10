@@ -152,6 +152,58 @@ class AmazonUKScraper:
         
         return bsr_ranks[:5]
     
+    def click_product_details_dropdown(self):
+        """Click to expand Product Details dropdown if BSR is hidden"""
+        try:
+            # Try to find and click "See more product details" or similar buttons
+            dropdown_selectors = [
+                "//div[@id='detailBullets_feature_div']//span[contains(text(), 'See more')]",
+                "//a[contains(@class, 'a-expander-header')]",
+                "//div[contains(@class, 'product-facts-detail')]//a",
+                "//span[contains(text(), 'Product details')]//ancestor::div//a"
+            ]
+            
+            for selector in dropdown_selectors:
+                try:
+                    element = self.driver.find_element(By.XPATH, selector)
+                    if element.is_displayed():
+                        element.click()
+                        time.sleep(1)  # Wait for dropdown to expand
+                        return True
+                except:
+                    continue
+            
+            return False
+        except Exception as e:
+            return False
+    
+    def check_for_popup(self):
+        """Check for Amazon pop-ups like 'Are you still shopping?' and handle them"""
+        try:
+            # Common Amazon pop-up patterns
+            popup_selectors = [
+                "//span[contains(text(), 'still shopping')]",
+                "//button[contains(text(), 'Continue')]",
+                "//input[@value='Continue shopping']",
+                "//div[@role='dialog']//button",
+                "//div[contains(@class, 'a-popover')]//button"
+            ]
+            
+            for selector in popup_selectors:
+                try:
+                    popup = self.driver.find_element(By.XPATH, selector)
+                    if popup.is_displayed():
+                        print("      ⚠️  Pop-up detected - attempting to close...")
+                        popup.click()
+                        time.sleep(1)
+                        return True
+                except:
+                    continue
+            
+            return False
+        except:
+            return False
+    
     def download_images_and_bsr(self, url, keyword, asin, search_elem, extract_bsr=False):
         """Download images and optionally extract BSR from product page"""
         result = {"folder": None, "count": 0, "thumbnail": None, "bsr_ranks": []}
@@ -180,6 +232,14 @@ class AmazonUKScraper:
                 self.driver.switch_to.window(self.driver.window_handles[-1])
                 self.driver.get(url)
                 time.sleep(3)
+                
+                # Check for pop-ups first
+                self.check_for_popup()
+                
+                # If extracting BSR, try to click dropdown first
+                if extract_bsr:
+                    self.click_product_details_dropdown()
+                    time.sleep(1)  # Wait for content to load
                 
                 html = self.driver.page_source
                 
@@ -284,6 +344,9 @@ class AmazonUKScraper:
         try:
             self.driver.get(f"https://www.amazon.co.uk/s?k={quote_plus(keyword)}")
             time.sleep(random.uniform(5, 7))
+            
+            # Check for pop-ups on search page
+            self.check_for_popup()
             
             if "captcha" in self.driver.page_source.lower():
                 self.log_error("CAPTCHA", keyword, "CAPTCHA detected")

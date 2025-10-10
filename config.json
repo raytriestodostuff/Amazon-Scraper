@@ -1,9 +1,8 @@
 {
   "keywords": [
-    "keyrings",
-    "wireless mouse",
-    "laptop stand"
+    "water bottle"
   ],
   "max_products": 10,
-  "headless": true
+  "headless": false
 }
+
