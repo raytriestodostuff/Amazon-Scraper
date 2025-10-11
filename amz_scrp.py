@@ -25,8 +25,13 @@ class AmazonUKScraper:
         self.error_log_path = os.path.join(output_dir, "error_log.txt")
         os.makedirs(self.images_dir, exist_ok=True)
         
+        self.headless = headless
+        self.init_driver()
+    
+    def init_driver(self):
+        """Initialize or reinitialize the Chrome driver"""
         chrome_options = Options()
-        if headless:
+        if self.headless:
             chrome_options.add_argument("--headless")
         
         for arg in ["--no-sandbox", "--disable-dev-shm-usage", "--incognito", 
@@ -38,8 +43,27 @@ class AmazonUKScraper:
         chrome_options.add_experimental_option("useAutomationExtension", False)
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         
+        # Add memory optimization
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--disable-software-rasterizer")
+        chrome_options.add_argument("--single-process")
+        
         self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
         self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    
+    def check_driver_alive(self):
+        """Check if driver session is still alive, restart if needed"""
+        try:
+            self.driver.current_url
+            return True
+        except:
+            print("  ⚠️  Browser session lost - restarting...")
+            try:
+                self.driver.quit()
+            except:
+                pass
+            self.init_driver()
+            return False
     
     def log_error(self, error_type, keyword, message, exception=None):
         """Log errors to file with timestamp"""
@@ -227,8 +251,19 @@ class AmazonUKScraper:
             pass
         
         if url:
+            new_tab_opened = False
             try:
+                # Check if driver is alive before opening new tab
+                if not self.check_driver_alive():
+                    return result
+                
+                # Store current window handle
+                main_window = self.driver.current_window_handle
+                
                 self.driver.execute_script("window.open('');")
+                new_tab_opened = True
+                
+                # Switch to new tab
                 self.driver.switch_to.window(self.driver.window_handles[-1])
                 self.driver.get(url)
                 time.sleep(3)
@@ -239,7 +274,7 @@ class AmazonUKScraper:
                 # If extracting BSR, try to click dropdown first
                 if extract_bsr:
                     self.click_product_details_dropdown()
-                    time.sleep(1)  # Wait for content to load
+                    time.sleep(1)
                 
                 html = self.driver.page_source
                 
@@ -261,15 +296,21 @@ class AmazonUKScraper:
                     except:
                         continue
                 
+                # Close the new tab and switch back to main window
                 self.driver.close()
-                self.driver.switch_to.window(self.driver.window_handles[0])
-            except:
-                try:
-                    if len(self.driver.window_handles) > 1:
-                        self.driver.close()
-                        self.driver.switch_to.window(self.driver.window_handles[0])
-                except:
-                    pass
+                self.driver.switch_to.window(main_window)
+                
+            except Exception as e:
+                # Ensure we clean up properly even if error occurs
+                if new_tab_opened:
+                    try:
+                        # Try to close any extra tabs and get back to main window
+                        while len(self.driver.window_handles) > 1:
+                            self.driver.close()
+                            self.driver.switch_to.window(self.driver.window_handles[0])
+                    except:
+                        # If that fails, driver is probably dead
+                        pass
         
         return result
     
@@ -339,6 +380,10 @@ class AmazonUKScraper:
     def scrape_keyword(self, keyword, max_products=10):
         """Scrape products for a single keyword"""
         print(f"\n[{keyword}]")
+        
+        # Check if driver is alive before starting
+        if not self.check_driver_alive():
+            time.sleep(2)  # Give it a moment to restart
         
         products = []
         try:

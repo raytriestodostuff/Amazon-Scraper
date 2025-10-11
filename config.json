@@ -1,8 +1,31 @@
 {
   "keywords": [
-    "water bottle"
+    "wireless mouse",
+    "phone charger",
+    "water bottle",
+    "notebook",
+    "usb cable",
+    "desk lamp",
+    "yoga mat",
+    "resistance bands",
+    "protein powder",
+    "coffee mug",
+    "backpack",
+    "headphones",
+    "laptop stand",
+    "kitchen knife",
+    "bluetooth speaker",
+    "running shoes",
+    "gaming keyboard",
+    "face cream",
+    "air fryer",
+    "phone case",
+    "portable charger",
+    "screen protector",
+    "memory card",
+    "camping tent",
+    "dog treats"
   ],
-  "max_products": 10,
-  "headless": false
+  "max_products": 5,
+  "headless": true
 }
-
