@@ -24,7 +24,6 @@ class AmazonUKScraper:
         self.images_dir = os.path.join(output_dir, "product_images")
         self.error_log_path = os.path.join(output_dir, "error_log.txt")
         os.makedirs(self.images_dir, exist_ok=True)
-        
         self.headless = headless
         self.init_driver()
     
@@ -34,19 +33,15 @@ class AmazonUKScraper:
         if self.headless:
             chrome_options.add_argument("--headless")
         
-        for arg in ["--no-sandbox", "--disable-dev-shm-usage", "--incognito", 
-                    "--disable-extensions", "--disable-blink-features=AutomationControlled"]:
+        for arg in ["--no-sandbox", "--disable-dev-shm-usage", "--incognito", "--disable-extensions", 
+                    "--disable-blink-features=AutomationControlled", "--disable-gpu", 
+                    "--disable-software-rasterizer", "--single-process"]:
             chrome_options.add_argument(arg)
         
         chrome_options.add_argument(f"--user-data-dir={tempfile.mkdtemp(prefix='chrome_scraper_')}")
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option("useAutomationExtension", False)
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        
-        # Add memory optimization
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--disable-software-rasterizer")
-        chrome_options.add_argument("--single-process")
         
         self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
         self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -67,8 +62,8 @@ class AmazonUKScraper:
     
     def log_error(self, error_type, keyword, message, exception=None):
         """Log errors to file with timestamp"""
-        entry = f"\n{'='*60}\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {error_type}\n"
-        entry += f"Keyword: {keyword}\nMessage: {message}\n"
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        entry = f"\n{'='*60}\n[{timestamp}] {error_type}\nKeyword: {keyword}\nMessage: {message}\n"
         if exception:
             entry += f"Exception: {str(exception)}\nTraceback:\n{traceback.format_exc()}\n"
         entry += f"{'='*60}\n"
@@ -77,17 +72,49 @@ class AmazonUKScraper:
             f.write(entry)
         print(f"  ❌ ERROR: {message}")
     
-    def find_element_safe(self, elem, selectors, by=By.CSS_SELECTOR):
-        """Try multiple selectors, return first match"""
-        if isinstance(selectors, str):
-            selectors = [selectors]
-        for selector in selectors:
+    def extract_title(self, elem):
+        """Extract complete product title using multiple fallback methods"""
+        title_selectors = ["h2 a span", "h2 span.a-text-normal", "h2 a.a-link-normal span", "h2 span", 
+                          "h2 a", "h2", "[data-cy='title-recipe'] h2", "div.s-title-instructions-style h2"]
+        
+        for selector in title_selectors:
             try:
-                found = elem.find_element(by, selector)
-                return found.text.strip() if hasattr(found, 'text') else found
+                title_elem = elem.find_element(By.CSS_SELECTOR, selector)
+                title = title_elem.get_attribute("textContent") or title_elem.get_attribute("innerText") or title_elem.text
+                if title and len(title.strip()) > 5:
+                    return title.strip()
             except NoSuchElementException:
                 continue
-        return None
+        
+        # Try aria-label and title attributes
+        for attr in ["aria-label", "title"]:
+            try:
+                h2_link = elem.find_element(By.CSS_SELECTOR, "h2 a")
+                attr_value = h2_link.get_attribute(attr)
+                if attr_value and len(attr_value.strip()) > 5:
+                    return attr_value.strip()
+            except:
+                continue
+        
+        # Search all links for title-like text
+        try:
+            for link in elem.find_elements(By.CSS_SELECTOR, "a"):
+                link_text = link.get_attribute("textContent") or link.text
+                if link_text and len(link_text.strip()) > 10:
+                    if not any(char in link_text for char in ['£', '$', '⭐', '★']):
+                        return link_text.strip()
+        except:
+            pass
+        
+        # Last resort: use ASIN
+        try:
+            asin = elem.get_attribute("data-asin")
+            if asin:
+                return f"Product {asin}"
+        except:
+            pass
+        
+        return "Unknown Product"
     
     def extract_price(self, elem):
         """Extract price using multiple fallback methods"""
@@ -114,9 +141,7 @@ class AmazonUKScraper:
     def extract_badges(self, elem):
         """Extract and parse badges"""
         badges = []
-        selectors = ["span.a-badge-label", "span[class*='badge']", "div[class*='badge']", "span.a-badge-text"]
-        
-        for selector in selectors:
+        for selector in ["span.a-badge-label", "span[class*='badge']", "div[class*='badge']", "span.a-badge-text"]:
             try:
                 for badge_elem in elem.find_elements(By.CSS_SELECTOR, selector):
                     text = badge_elem.text.strip()
@@ -164,78 +189,42 @@ class AmazonUKScraper:
             for match in re.findall(pattern, html, re.IGNORECASE):
                 if re.search(f'Top\\s+{re.escape(match[0])}\\s+in', html, re.IGNORECASE):
                     continue
-                
                 try:
                     rank = int(match[0].replace(',', ''))
                     category = match[1].strip()
-                    
                     if rank > 0 and 2 < len(category) < 100 and not any(r["rank"] == rank and r["category"] == category for r in bsr_ranks):
                         bsr_ranks.append({"rank": rank, "category": category})
                 except:
                     continue
-        
         return bsr_ranks[:5]
     
-    def click_product_details_dropdown(self):
-        """Click to expand Product Details dropdown if BSR is hidden"""
-        try:
-            # Try to find and click "See more product details" or similar buttons
-            dropdown_selectors = [
-                "//div[@id='detailBullets_feature_div']//span[contains(text(), 'See more')]",
-                "//a[contains(@class, 'a-expander-header')]",
-                "//div[contains(@class, 'product-facts-detail')]//a",
-                "//span[contains(text(), 'Product details')]//ancestor::div//a"
-            ]
-            
-            for selector in dropdown_selectors:
-                try:
-                    element = self.driver.find_element(By.XPATH, selector)
-                    if element.is_displayed():
-                        element.click()
-                        time.sleep(1)  # Wait for dropdown to expand
-                        return True
-                except:
-                    continue
-            
-            return False
-        except Exception as e:
-            return False
-    
     def check_for_popup(self):
-        """Check for Amazon pop-ups like 'Are you still shopping?' and handle them"""
+        """Check for and close Amazon pop-ups"""
+        popup_selectors = ["//span[contains(text(), 'still shopping')]", "//button[contains(text(), 'Continue')]",
+                          "//input[@value='Continue shopping']", "//div[@role='dialog']//button"]
         try:
-            # Common Amazon pop-up patterns
-            popup_selectors = [
-                "//span[contains(text(), 'still shopping')]",
-                "//button[contains(text(), 'Continue')]",
-                "//input[@value='Continue shopping']",
-                "//div[@role='dialog']//button",
-                "//div[contains(@class, 'a-popover')]//button"
-            ]
-            
             for selector in popup_selectors:
                 try:
                     popup = self.driver.find_element(By.XPATH, selector)
                     if popup.is_displayed():
-                        print("      ⚠️  Pop-up detected - attempting to close...")
+                        print("      ⚠️  Pop-up detected - closing...")
                         popup.click()
                         time.sleep(1)
                         return True
                 except:
                     continue
-            
-            return False
         except:
-            return False
+            pass
+        return False
     
     def download_images_and_bsr(self, url, keyword, asin, search_elem, extract_bsr=False):
         """Download images and optionally extract BSR from product page"""
         result = {"folder": None, "count": 0, "thumbnail": None, "bsr_ranks": []}
-        
         folder = os.path.join(self.images_dir, keyword.replace(" ", "_").replace("/", "-"), asin)
         os.makedirs(folder, exist_ok=True)
         result["folder"] = folder
         
+        # Download thumbnail from search results
         try:
             img = search_elem.find_element(By.CSS_SELECTOR, "img.s-image")
             img_url = img.get_attribute("src")
@@ -250,31 +239,20 @@ class AmazonUKScraper:
         except:
             pass
         
+        # Visit product page for high-res images and BSR
         if url:
             new_tab_opened = False
             try:
-                # Check if driver is alive before opening new tab
                 if not self.check_driver_alive():
                     return result
                 
-                # Store current window handle
                 main_window = self.driver.current_window_handle
-                
                 self.driver.execute_script("window.open('');")
                 new_tab_opened = True
-                
-                # Switch to new tab
                 self.driver.switch_to.window(self.driver.window_handles[-1])
                 self.driver.get(url)
                 time.sleep(3)
-                
-                # Check for pop-ups first
                 self.check_for_popup()
-                
-                # If extracting BSR, try to click dropdown first
-                if extract_bsr:
-                    self.click_product_details_dropdown()
-                    time.sleep(1)
                 
                 html = self.driver.page_source
                 
@@ -282,8 +260,8 @@ class AmazonUKScraper:
                     result["bsr_ranks"] = self.extract_bsr(html)
                 
                 image_urls = set(match for match in re.findall(r'"hiRes":"(https://[^"]+)"', html) if match != "null")
-                
                 seen_hashes = set()
+                
                 for i, img_url in enumerate(sorted(image_urls), 1):
                     try:
                         response = requests.get(img_url, timeout=15)
@@ -296,20 +274,16 @@ class AmazonUKScraper:
                     except:
                         continue
                 
-                # Close the new tab and switch back to main window
                 self.driver.close()
                 self.driver.switch_to.window(main_window)
                 
-            except Exception as e:
-                # Ensure we clean up properly even if error occurs
+            except Exception:
                 if new_tab_opened:
                     try:
-                        # Try to close any extra tabs and get back to main window
                         while len(self.driver.window_handles) > 1:
                             self.driver.close()
                             self.driver.switch_to.window(self.driver.window_handles[0])
                     except:
-                        # If that fails, driver is probably dead
                         pass
         
         return result
@@ -324,39 +298,45 @@ class AmazonUKScraper:
             "position": position,
             "keyword": keyword,
             "scrape_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "asin": asin
+            "asin": asin,
+            "title": self.extract_title(elem),
+            "price": self.extract_price(elem)
         }
         
-        product["title"] = self.find_element_safe(elem, ["h2 a span", "h2 span", "h2 a"]) or ""
-        product["price"] = self.extract_price(elem)
-        
+        # Extract rating
         try:
             rating_text = elem.find_element(By.CSS_SELECTOR, "span.a-icon-alt").get_attribute("textContent")
             product["rating"] = float(re.search(r"(\d+\.?\d*)", rating_text).group(1))
         except:
             product["rating"] = None
         
+        # Extract review count
         try:
             for link in elem.find_elements(By.CSS_SELECTOR, "a[href*='#customerReviews']"):
                 aria = link.get_attribute("aria-label")
-                if aria and (match := re.search(r"([\d,]+)", aria)):
-                    product["review_count"] = int(match.group(1).replace(",", ""))
-                    break
+                if aria:
+                    match = re.search(r"([\d,]+)", aria)
+                    if match:
+                        product["review_count"] = int(match.group(1).replace(",", ""))
+                        break
             else:
                 product["review_count"] = 0
         except:
             product["review_count"] = 0
         
+        # Extract badges
         badges_full = self.extract_badges(elem)
         product["badges"] = [b["badge_type"] for b in badges_full]
         has_best_seller = any(b["badge_type"] == "Best Seller" for b in badges_full)
         
+        # Extract URL
         try:
             href = elem.find_element(By.CSS_SELECTOR, "h2 a").get_attribute("href")
             product["url"] = href.split("?")[0] if "?" in href else href
         except:
             product["url"] = f"https://www.amazon.co.uk/dp/{asin}"
         
+        # Download images and BSR
         try:
             img_bsr = self.download_images_and_bsr(product["url"], keyword, asin, elem, has_best_seller)
             product["image_folder"] = img_bsr["folder"]
@@ -373,7 +353,8 @@ class AmazonUKScraper:
                 product["bsr_category"] = "N/A"
         except Exception as e:
             self.log_error("IMAGE_BSR_ERROR", keyword, f"Failed for ASIN {asin}", e)
-            product.update({"image_folder": None, "image_count": 0, "thumbnail_path": None, "bsr_rank": "N/A", "bsr_category": "N/A"})
+            product.update({"image_folder": None, "image_count": 0, "thumbnail_path": None, 
+                          "bsr_rank": "N/A", "bsr_category": "N/A"})
         
         return product
     
@@ -381,21 +362,18 @@ class AmazonUKScraper:
         """Scrape products for a single keyword"""
         print(f"\n[{keyword}]")
         
-        # Check if driver is alive before starting
         if not self.check_driver_alive():
-            time.sleep(2)  # Give it a moment to restart
+            time.sleep(2)
         
         products = []
         try:
             self.driver.get(f"https://www.amazon.co.uk/s?k={quote_plus(keyword)}")
             time.sleep(random.uniform(5, 7))
-            
-            # Check for pop-ups on search page
             self.check_for_popup()
             
             if "captcha" in self.driver.page_source.lower():
                 self.log_error("CAPTCHA", keyword, "CAPTCHA detected")
-                print("  ⚠️  CAPTCHA detected - cannot solve in headless mode")
+                print("  ⚠️  CAPTCHA detected")
                 return []
             
             product_elements = WebDriverWait(self.driver, 10).until(
@@ -458,7 +436,7 @@ class AmazonUKScraper:
         """Run scraper for all keywords"""
         print(f"\nAmazon UK Scraper")
         print(f"Keywords: {len(keywords)} | Products per keyword: {max_products}")
-        print(f"Mode: Headless | Error log: {self.error_log_path}\n")
+        print(f"Mode: {'Headless' if self.headless else 'Visible'} | Error log: {self.error_log_path}\n")
         
         all_results = {}
         failed_keywords = []
