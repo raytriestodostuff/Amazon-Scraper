@@ -63,9 +63,7 @@ Edit `config.json`:
 }
 ```
 
-**Your keys are already configured!**
-- ✅ ScraperAPI: `f2b986874b64e3a2b5c34448962f01ea`
-- ✅ Firecrawl: `fc-955876e5c34e47298e4a4fa76053fdad`
+**Note**: Copy `config.example.json` to `config.json` and add your API keys.
 
 ## Output
 
