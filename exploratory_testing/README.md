@@ -11,45 +11,51 @@ This folder contains structured test documentation for the Amazon Scraper v2 pro
 ## Latest Test Results
 
 ### Most Recent Run
-- **Date**: 2025-10-14 13:06:00
-- **Test**: Spain Market Run #2 (ES-002)
-- **Status**: ✅ PASSED
-- **Products**: 10/10 extracted
-- **Execution Time**: 2m 4s
-- **Log**: `test_logs/20251014_130600_spain_run.md`
+- **Date**: 2025-10-14 15:31:44
+- **Test**: UK Market Multi-Keyword Test (UK-001)
+- **Status**: ✅ **PASSED WITH EXCELLENCE**
+- **Keywords**: 8 (berberine products)
+- **Products**: 80/80 extracted (100%)
+- **BSR Success**: 97.5% (highest achieved!)
+- **Execution Time**: 10m 42s (~1m 20s per keyword)
+- **Log**: `test_logs/20251014_153144_uk_multi_keyword_test.md`
 
 ### Key Findings
-1. **BSR Variability**: BSR data changes between runs (expected behavior)
-2. **Price Stability**: 100% price consistency across runs
-3. **Performance**: 24% faster than previous run (no retries needed)
-4. **Architecture**: All 3 layers performing optimally
+1. **Exceptional BSR Rate**: 97.5% extraction (best performance to date)
+2. **Multi-Keyword Stability**: 8 keywords processed with 100% success
+3. **Linear Scaling**: Performance scales predictably (~1m 20s per keyword)
+4. **UK Market Ready**: Production-ready for English markets
 
 ## Test Coverage
 
 ### Completed Tests
-- ✅ Spain Market Test (ES-001) - Initial run
+- ✅ Spain Market Test (ES-001) - Initial run (1 keyword, 10 products)
 - ✅ Spain Market Test (ES-002) - Consistency validation
 - ✅ Layered Architecture Refactor Test (ARCH-001)
 - ✅ Run Comparison Analysis (COMP-001)
+- ✅ **UK Market Multi-Keyword Test (UK-001)** - 8 keywords, 80 products
 
 ### Pending Tests
-- ⏳ UK Market Test
 - ⏳ Germany Market Test
 - ⏳ France Market Test
 - ⏳ Italy Market Test
-- ⏳ Multi-keyword Test
+- ⏳ Spain Multi-Keyword Test (comparison with UK)
 - ⏳ Peak Load Test (concurrency=3)
+- ⏳ US Market Test (when available)
 
 ## Test Statistics
 
 | Metric | Value |
 |--------|-------|
-| Total Tests Run | 4 |
+| Total Tests Run | 5 |
 | Pass Rate | 100% |
-| Total Products Scraped | 20 |
-| Average Execution Time | 2m 23s |
-| BSR Extraction Rate | 90% |
-| Price Stability | 100% |
+| Total Products Scraped | 100 |
+| Total Keywords Tested | 10 |
+| Markets Tested | 2 (UK, ES) |
+| Average BSR Extraction | 93.8% |
+| Best BSR Extraction | 97.5% (UK) |
+| Average Execution Time | 1m 30s per keyword |
+| Price Data Accuracy | 100% |
 
 ## Test Template
 
@@ -65,9 +71,10 @@ Each test should include:
 ## Quick Links
 
 ### Test Logs
-- [Spain Test #1 (ES-001)](test_logs/20251014_spain_test.md)
-- [Spain Test #2 (ES-002)](test_logs/20251014_130600_spain_run.md)
-- [Layered Architecture Test](test_logs/20251014_layered_architecture_test.md)
+- [Spain Test #1 (ES-001)](test_logs/20251014_spain_test.md) - 1 keyword
+- [Spain Test #2 (ES-002)](test_logs/20251014_130600_spain_run.md) - Consistency check
+- [Layered Architecture Test (ARCH-001)](test_logs/20251014_layered_architecture_test.md)
+- **[UK Multi-Keyword Test (UK-001)](test_logs/20251014_153144_uk_multi_keyword_test.md) - 8 keywords, 80 products** ⭐
 
 ### Test Plans
 - [Multi-Country Test Plan](test_plans/multi_country_test_plan.md)
@@ -75,6 +82,7 @@ Each test should include:
 ### Findings
 - [Layered Architecture Benefits](findings/layered_architecture_benefits.md)
 - [Run Comparison: ES-001 vs ES-002](findings/run_comparison_es001_vs_es002.md)
+- **[UK Market Excellence - 97.5% BSR](findings/uk_market_excellence.md)** ⭐
 
 ## How to Add New Tests
 
