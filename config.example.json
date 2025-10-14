@@ -1,0 +1,15 @@
+{
+  "api_keys": {
+    "scraperapi": "your_scraperapi_key_here",
+    "firecrawl": "your_firecrawl_key_here"
+  },
+  "settings": {
+    "country": "es",
+    "max_concurrent": 1,
+    "max_products_to_scrape": 10,
+    "output_dir": "output"
+  },
+  "keywords": [
+    "wireless headphones"
+  ]
+}
