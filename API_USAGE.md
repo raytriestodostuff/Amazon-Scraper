@@ -22,7 +22,7 @@ Amazon Website
 
 ## API Calls Made
 
-### Direct Calls (What We Pay For)
+### Direct Calls
 
 #### 1. Firecrawl API Calls
 
@@ -61,7 +61,7 @@ Amazon Website
 }
 ```
 
-### Indirect Calls (Included in Firecrawl)
+### Indirect Calls
 
 #### 2. ScraperAPI Proxy (Called by Firecrawl)
 
@@ -84,7 +84,7 @@ http://api.scraperapi.com/?api_key=YOUR_KEY&url=AMAZON_URL&render=true&country_c
 
 ## API Call Count Per Run
 
-### UK Test Example (8 keywords, 10 products each)
+### Example: 8 keywords, 10 products each
 
 ```
 Total Firecrawl Calls: 88
@@ -103,70 +103,9 @@ Total ScraperAPI Calls: 88
 - 8 × 10 = 80 product page calls
 - **Total: 88 API calls to both Firecrawl and ScraperAPI**
 
-### Spain Test Example (1 keyword, 10 products)
-
-```
-Total Firecrawl Calls: 11
-├── Search page: 1 call
-└── Product pages: 10 calls
-
-Total ScraperAPI Calls: 11
-├── Search page: 1 call (via Firecrawl)
-└── Product pages: 10 calls (via Firecrawl)
-```
-
-## Cost Breakdown
-
-### Per API Call
-
-| API | Cost per Call | Notes |
-|-----|---------------|-------|
-| Firecrawl | ~$0.002 | Scrape endpoint pricing |
-| ScraperAPI | ~$0.001 | JS rendering enabled |
-| **Combined** | **~$0.003** | Per page fetched |
-
-**Note**: ScraperAPI is "free" in our architecture because Firecrawl calls it, not us directly.
-
-### Per Test Run
-
-#### UK Test (8 keywords, 80 products)
-```
-Firecrawl: 88 calls × $0.002 = $0.176
-ScraperAPI: 88 calls × $0.001 = $0.088
-Total Cost: ~$0.26
-```
-
-#### Spain Test (1 keyword, 10 products)
-```
-Firecrawl: 11 calls × $0.002 = $0.022
-ScraperAPI: 11 calls × $0.001 = $0.011
-Total Cost: ~$0.03
-```
-
-### Monthly Estimates
-
-**Scenario 1**: Daily scraping of 8 keywords
-```
-Daily: 88 calls × $0.003 = $0.26
-Monthly: $0.26 × 30 = $7.80
-```
-
-**Scenario 2**: Weekly scraping of 20 keywords
-```
-Per Run: 220 calls × $0.003 = $0.66
-Weekly: $0.66 × 1 = $0.66
-Monthly: $0.66 × 4 = $2.64
-```
-
-**Scenario 3**: Daily scraping of 50 keywords (high volume)
-```
-Daily: 550 calls × $0.003 = $1.65
-Monthly: $1.65 × 30 = $49.50
-```
-
 ## API Parameters Explained
 
-### ScraperAPI Parameters (Set by Us)
+### ScraperAPI Parameters
 
 ```python
 params = {
@@ -180,7 +119,6 @@ params = {
 #### `render: true`
 - **Purpose**: Enable JavaScript rendering
 - **Why**: Amazon loads product data dynamically with JavaScript
-- **Impact**: More expensive but necessary for complete data
 - **Without it**: Missing prices, reviews, BSR, images
 
 #### `country_code: gb` (or `es`, `de`, `fr`, `it`)
@@ -189,7 +127,7 @@ params = {
 - **Result**: See prices in local currency, local BSR rankings, local language
 - **Without it**: May get redirected or see US content
 
-### Firecrawl Parameters (Set by Us)
+### Firecrawl Parameters
 
 ```python
 payload = {
@@ -202,7 +140,6 @@ payload = {
 - **Purpose**: Return raw HTML only
 - **Alternatives**: `markdown`, `extract` (we don't use these)
 - **Why HTML**: We parse with BeautifulSoup for full control
-- **Cost**: Cheapest option (scrape endpoint)
 
 ## Request Flow Example
 
@@ -270,16 +207,15 @@ bsr = extract_bsr(soup)
 ## Rate Limits
 
 ### Firecrawl Limits
-- **Concurrent Requests**: We use semaphore (concurrency=1)
-- **Rate Limit**: Unknown, but we hit 429 errors at concurrency=10
-- **Our Setting**: `max_concurrent: 1` (prevents 429 errors)
+- **Concurrent Requests**: We use semaphore to control concurrency
+- **Rate Limit**: Can hit 429 errors at high concurrency (>5)
+- **Our Setting**: `max_concurrent: 2-3` (prevents 429 errors)
 - **Retry Logic**: 3 attempts with exponential backoff
 
 ### ScraperAPI Limits
 - **Concurrent Requests**: Handled by Firecrawl
 - **Monthly Credits**: Depends on your plan
-- **Our Usage**: ~88 credits per 8-keyword run
-- **Throttling**: None observed with concurrency=1
+- **Throttling**: None observed with concurrency=2-3
 
 ## Why This Architecture?
 
@@ -312,56 +248,12 @@ Our Code → Firecrawl → ScraperAPI → Amazon
 - ✅ Single API call from our side (simple code)
 - ✅ Best of both services
 
-## Optimization Opportunities
-
-### Current Setup (Most Reliable)
-- Concurrency: 1
-- Retries: 3
-- Cost per run (8 keywords): ~$0.26
-- Success rate: 100%
-
-### Potential Optimizations
-
-#### 1. Increase Concurrency (Risky)
-```python
-"max_concurrent": 3  # Instead of 1
-```
-**Benefits**: 3x faster (3m 30s vs 10m 42s for 8 keywords)
-**Risks**: May trigger Firecrawl 429 rate limits
-**Recommendation**: Test with monitoring
-
-#### 2. Reduce Retries (Cost Savings)
-```python
-for attempt in range(2):  # Instead of 3
-```
-**Benefits**: Fail faster, fewer wasted calls
-**Risks**: Lower success rate
-**Recommendation**: Only if success rate >99%
-
-#### 3. Cache Search Pages (Moderate Savings)
-```python
-# Cache search results for 1 hour
-cache_search_results(keyword, html)
-```
-**Benefits**: Save 8 calls per re-run (1 per keyword)
-**Savings**: ~$0.024 per re-run
-**Use Case**: Testing/debugging
-
-#### 4. Skip Low-Value Products (High Savings)
-```python
-# Only enrich top 5 products instead of 10
-max_products_to_scrape: 5
-```
-**Benefits**: 50% fewer product page calls
-**Savings**: ~$0.12 per run
-**Trade-off**: Less complete data
-
 ## Monitoring API Usage
 
 ### Check Firecrawl Usage
 Dashboard: https://firecrawl.dev/dashboard
 - View API calls per day
-- Monitor costs
+- Monitor usage
 - Check rate limits
 
 ### Check ScraperAPI Usage
@@ -385,25 +277,20 @@ logger.error(f"  ✗ Failed to fetch after 3 attempts")
 ## Summary
 
 ### What APIs Are Called
-1. **Firecrawl** (directly by us): 88 calls for 8 keywords
-2. **ScraperAPI** (by Firecrawl): 88 calls for 8 keywords
+1. **Firecrawl** (directly by us): All page requests
+2. **ScraperAPI** (by Firecrawl): All page requests (via Firecrawl)
 
 ### What Each API Does
 - **Firecrawl**: Fetches HTML cleanly, handles retries
 - **ScraperAPI**: Provides proxy/IP rotation, renders JavaScript, bypasses blocks
 
-### Cost
-- **~$0.003 per page**
-- **~$0.26 per 8-keyword run**
-- **~$8 per month** for daily 8-keyword scraping
-
 ### Performance
-- **~8 seconds per page**
-- **~1m 20s per keyword** (search + 10 products)
-- **~10m 42s for 8 keywords** (with concurrency=1)
+- **~7-10 seconds per page**
+- **~1-2 minutes per keyword** (search + 10 products)
+- **~10-15 minutes for 8 keywords** (with concurrency=2-3)
 
 ---
 
 **Last Updated**: 2025-10-14
 **Architecture**: Firecrawl + ScraperAPI
-**Concurrency**: 1 (optimal for reliability)
+**Recommended Concurrency**: 2-3

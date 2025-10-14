@@ -37,6 +37,8 @@ class ProductParser:
         product_divs = soup.find_all('div', {'data-component-type': 's-search-result'})
         logger.info(f"  Found {len(product_divs)} product containers")
 
+        position_counter = 0  # Track non-sponsored position
+
         for idx, div in enumerate(product_divs, 1):
             try:
                 # Extract ASIN
@@ -47,6 +49,9 @@ class ProductParser:
                 # Skip sponsored products
                 if self._is_sponsored(div):
                     continue
+
+                # Increment position for non-sponsored products
+                position_counter += 1
 
                 # Extract all basic fields
                 title = self._extract_title(div)
@@ -61,6 +66,7 @@ class ProductParser:
 
                 product = {
                     'asin': asin,
+                    'search_position': position_counter,  # Add position (1-indexed)
                     'title': title,
                     'price': price,
                     'currency': self.currency,

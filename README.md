@@ -1,24 +1,39 @@
-# Amazon UK Scraper with ScraperAPI + Firecrawl
+# Amazon Multi-Country Scraper
 
-Simple, powerful scraper that:
-- ✅ Uses **ScraperAPI** (renders JS, bypasses blocks)
-- ✅ Uses **Firecrawl** (clean HTML/markdown)
-- ✅ Extracts **ASINs** and **product images**
-- ✅ Runs **multiple keywords in parallel**
-- ✅ UK only (for now)
-- ✅ **No hardcoded API keys** - all in config.json
+A layered scraper that extracts product data from Amazon search results across multiple countries.
 
-## Quick Start
+## Features
 
-### 1. Install Dependency
+- ✅ **Multi-country support** - UK, US, Spain, Germany, France, Italy
+- ✅ **Complete product data** - Title, price, rating, reviews, BSR, badges, images
+- ✅ **ASIN deduplication** - Tracks duplicate products across keywords
+- ✅ **Search position tracking** - Records product ranking per keyword
+- ✅ **Multi-language parsing** - English, Spanish, German, French, Italian
+
+## Dependencies
+
+Install required packages:
+
 ```bash
-pip install aiohttp
+pip install aiohttp beautifulsoup4
 ```
 
-### 2. Edit Keywords
-Edit `config.json` and add your keywords:
+## Configuration
+
+Edit `config.json` with your API keys and settings:
+
 ```json
 {
+  "api_keys": {
+    "scraperapi": "YOUR_SCRAPERAPI_KEY",
+    "firecrawl": "YOUR_FIRECRAWL_KEY"
+  },
+  "settings": {
+    "countries": ["uk"],
+    "max_concurrent": 2,
+    "max_products_to_scrape": 10,
+    "output_dir": "output"
+  },
   "keywords": [
     "wireless headphones",
     "protein powder",
@@ -27,191 +42,177 @@ Edit `config.json` and add your keywords:
 }
 ```
 
-### 3. Run
-```bash
-python scraper.py
-```
+### Configuration Options
 
-## What It Does
+**API Keys:**
+- `scraperapi` - Your ScraperAPI key (get from https://scraperapi.com)
+- `firecrawl` - Your Firecrawl key (get from https://firecrawl.dev)
 
-1. **Fetches** search pages via ScraperAPI (UK, with JS rendering)
-2. **Cleans** HTML via Firecrawl /scrape endpoint
-3. **Extracts** ASINs and product images
-4. **Outputs** two JSON files:
-   - `uk_results_TIMESTAMP.json` - Full data
-   - `uk_gpt_ready_TIMESTAMP.json` - Optimized for GPT-5 Nano
+**Settings:**
+- `countries` - Array of country codes for multi-country mode: `["uk", "us", "es", "de", "fr", "it"]`
+- `country` - Single country code for single-country mode: `"uk"`
+- `max_concurrent` - Concurrent product fetches per keyword (recommended: 2-5)
+- `max_products_to_scrape` - Products to scrape per keyword (max: 10)
+- `output_dir` - Output directory (default: "output")
 
-## Configuration
+**Keywords:**
+- List of search terms to scrape (in English)
 
-Edit `config.json`:
+## How to Run
+
+The scraper automatically detects whether to run in single-country or multi-country mode based on your config.
+
+### Single Country Mode
+
+Set `"country"` in config.json:
 
 ```json
 {
-  "api_keys": {
-    "scraperapi": "YOUR_KEY_HERE",
-    "firecrawl": "YOUR_KEY_HERE"
-  },
   "settings": {
     "country": "uk",
-    "max_concurrent": 10,
-    "extract_images": true,
-    "output_dir": "output"
-  },
-  "keywords": [
-    "your keywords here"
-  ]
+    ...
+  }
 }
 ```
 
-**Note**: Copy `config.example.json` to `config.json` and add your API keys.
-
-## Output
-
-### uk_results_TIMESTAMP.json
-```json
-{
-  "keyword": "wireless headphones",
-  "country": "uk",
-  "status": "success",
-  "asins": ["B08N5WRWNW", "B09JQMJHXY", ...],
-  "total_asins": 48,
-  "images": ["https://m.media-amazon.com/images/I/...", ...],
-  "total_images": 156,
-  "scraperapi_html": "<html>...</html>",
-  "firecrawl_markdown": "# Products\n..."
-}
-```
-
-### uk_gpt_ready_TIMESTAMP.json
-```json
-{
-  "keyword": "wireless headphones",
-  "country": "uk",
-  "asins": ["B08N5WRWNW", ...],
-  "images": ["https://...", ...],
-  "markdown": "# Products\n...",
-  "html_snippet": "<div>..."
-}
-```
-
-## Features
-
-✅ **ScraperAPI + Firecrawl combo** - Best of both worlds
-✅ **Image extraction** - All product images from search
-✅ **ASIN extraction** - All organic product ASINs
-✅ **Parallel scraping** - 10 keywords at once
-✅ **UK focused** - amazon.co.uk with GB country code
-✅ **Config-based** - No hardcoded keys
-✅ **Retry logic** - 3 attempts with backoff
-✅ **Clean output** - Ready for GPT-5 Nano
-
-## Extracted Data
-
-For each keyword:
-- **ASINs**: List of all product ASINs found
-- **Images**: All product image URLs (high-res)
-- **HTML**: Full HTML from ScraperAPI
-- **Markdown**: Clean markdown from Firecrawl
-- **Metadata**: Firecrawl metadata
-
-## Cost per Run
-
-With 5 keywords (default config):
-- ScraperAPI: 5 requests × $0.001 = **$0.005**
-- Firecrawl: 5 requests × $0.002 = **$0.010**
-- **Total**: ~$0.015
-
-## Troubleshooting
-
-### "ModuleNotFoundError: No module named 'aiohttp'"
-```bash
-pip install aiohttp
-```
-
-### "ScraperAPI error"
-Check your usage at: https://www.scraperapi.com/dashboard
-
-### "Firecrawl error"
-Verify your API key at: https://firecrawl.dev/dashboard
-
-### No images extracted
-Set `"extract_images": true` in config.json
-
-## Next Steps
-
-1. **Edit keywords** in `config.json`
-2. **Run**: `python scraper.py`
-3. **Check output**: `ls output/`
-4. **Feed to GPT-5 Nano** for product extraction
-
----
-
-## Version 2 - Layered Architecture (Recommended)
-
-**NEW**: Refactored into clean, maintainable layers for production use.
-
-### What's New in V2
-
-✅ **3-Layer Architecture** - Separated HTTP, parsing, and orchestration
-✅ **Complete Product Data** - Title, price, rating, reviews, BSR, badges, images
-✅ **Multi-Country Support** - UK, Spain, Germany, France, Italy
-✅ **Exploratory Testing Framework** - Comprehensive test logs and findings
-✅ **Better Debugging** - Clear separation of concerns per layer
-✅ **90% BSR Extraction** - Multi-language pattern matching
-
-### Quick Start V2
-
+Run:
 ```bash
 python layer3_orchestrator.py
 ```
 
-### V2 Architecture
+### Multi-Country Mode
 
-- **Layer 1** (`layer1_http_client.py`) - ScraperAPI + Firecrawl communication
-- **Layer 2** (`layer2_parser.py`) - BeautifulSoup HTML parsing and data extraction
-- **Layer 3** (`layer3_orchestrator.py`) - Workflow coordination and output
+Set `"countries"` (plural) in config.json:
 
-### Documentation
+```json
+{
+  "settings": {
+    "countries": ["uk", "us", "es", "de"],
+    ...
+  }
+}
+```
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Complete architecture guide with diagrams
-- **[QUICK_START.md](QUICK_START.md)** - Quick reference for configuration
-- **[exploratory_testing/](exploratory_testing/)** - Test logs, plans, and findings
+Run the same command:
+```bash
+python layer3_orchestrator.py
+```
 
-### V2 Output Format
+**Note**: Multi-country mode processes countries sequentially. Each country resets the ASIN deduplication cache.
+
+### Estimated Runtime
+
+Based on testing with concurrency=5:
+- **1 country** (8 keywords, 10 products each): ~5 minutes
+- **2 countries**: ~10-11 minutes
+- **4 countries**: ~20-22 minutes
+
+Adjust `max_concurrent` to balance speed vs API rate limits.
+
+## Expected Output
+
+### File Structure
+
+```
+output/
+├── uk/
+│   ├── wireless_headphones_20251014_123456.json
+│   ├── protein_powder_20251014_123456.json
+│   └── all_keywords_20251014_123456.json
+├── us/
+│   └── ...
+└── es/
+    └── ...
+```
+
+### Output Format
+
+Each keyword file contains:
 
 ```json
 {
   "keyword": "wireless headphones",
-  "country": "es",
-  "domain": "amazon.es",
-  "currency": "EUR",
+  "country": "uk",
+  "domain": "amazon.co.uk",
+  "currency": "GBP",
   "status": "success",
   "total_products": 10,
   "products": [
     {
-      "asin": "B0D6YMGXBF",
-      "title": "XIAOMI Redmi Buds 6 Active...",
-      "price": 14.99,
-      "currency": "EUR",
-      "rating": 4.0,
-      "review_count": 99,
+      "asin": "B08N5WRWNW",
+      "search_position": 1,
+      "title": "Sony WH-1000XM4 Wireless Headphones",
+      "price": 279.0,
+      "currency": "GBP",
+      "rating": 4.7,
+      "review_count": 45234,
+      "bsr_rank": 3,
+      "bsr_category": "Electronics",
       "badges": ["Amazon's Choice"],
-      "url": "https://www.amazon.es/dp/B0D6YMGXBF",
-      "bsr_rank": 1,
-      "bsr_category": "Headphones & Earphones",
-      "images": ["url1", "url2", ...]
+      "url": "https://www.amazon.co.uk/dp/B08N5WRWNW",
+      "images": ["url1", "url2", "url3", "url4", "url5", "url6"]
     }
   ]
 }
 ```
 
-### Performance
+### Duplicate Products
 
-- **Execution Time**: 2-3 minutes for 10 products
-- **BSR Extraction**: 90% success rate
-- **Data Stability**: 96% consistency across runs
-- **Concurrency**: 1 (prevents rate limits)
+Products appearing in multiple keywords are marked with:
+
+```json
+{
+  "asin": "B08N5WRWNW",
+  "search_position": 3,
+  "title": "[REPEATED - see 'wireless headphones']",
+  "price": "[REPEATED]",
+  "rating": "[REPEATED]",
+  "review_count": "[REPEATED]",
+  "bsr_rank": 3,
+  "bsr_category": "Electronics",
+  "badges": [],
+  "images": "[REPEATED]",
+  "is_duplicate": true,
+  "first_seen_in": "wireless headphones"
+}
+```
+
+**Note**: BSR is always scraped fresh for each keyword, even for duplicates.
+
+## Architecture
+
+The scraper uses a 3-layer architecture:
+
+- **Layer 1** (`layer1_http_client.py`) - HTTP requests via Firecrawl + ScraperAPI
+- **Layer 2** (`layer2_parser.py`) - HTML parsing with BeautifulSoup
+- **Layer 3** (`layer3_orchestrator.py`) - Workflow coordination and output
+
+## Troubleshooting
+
+### Missing Dependencies
+```bash
+pip install aiohttp beautifulsoup4
+```
+
+### API Errors
+- Check ScraperAPI dashboard: https://scraperapi.com/dashboard
+- Check Firecrawl dashboard: https://firecrawl.dev/dashboard
+
+### No Products Extracted
+- Verify country code is valid: `["uk", "us", "es", "de", "fr", "it"]`
+- Check that keywords are in English
+- Reduce `max_concurrent` to 1 if getting rate limit errors
+
+### Missing BSR Data
+- BSR extraction rates vary by country
+- Expected rates: UK/US (95-100%), Spain (90%), Germany (55-85%)
+- Some products don't have BSR rankings
+
+## Documentation
+
+- **[API_USAGE.md](API_USAGE.md)** - API architecture and request flow
+- **[exploratory_testing/](exploratory_testing/)** - Test logs and findings
 
 ---
 
-**Simple, clean, and ready to scale!** 🚀
+**Ready to scrape!** 🚀

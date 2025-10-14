@@ -70,6 +70,9 @@ class AmazonScraper:
         )
         self.parser = ProductParser(domain=self.domain, currency=self.currency)
 
+        # ASIN cache for deduplication within a single run
+        self.asin_cache = {}  # {asin: {full_product_data, first_keyword}}
+
         logger.info(f"✓ Initialized Amazon {country.upper()} Scraper")
         logger.info(f"  Domain: {self.domain}")
         logger.info(f"  Concurrency: {self.max_concurrent}")
@@ -105,7 +108,7 @@ class AmazonScraper:
             if products:
                 logger.info(f"  Enriching product data (max: {self.max_products})...")
                 product_tasks = [
-                    self._enrich_product(product)
+                    self._enrich_product(product, keyword)
                     for product in products[:self.max_products]
                 ]
                 enriched_products = await asyncio.gather(*product_tasks)
@@ -139,12 +142,14 @@ class AmazonScraper:
                 'products': []
             }
 
-    async def _enrich_product(self, product: Dict) -> Optional[Dict]:
+    async def _enrich_product(self, product: Dict, current_keyword: str) -> Optional[Dict]:
         """
         Enrich product with data from individual product page
+        For duplicates: Still fetches BSR but uses cached data for other fields
 
         Args:
             product: Basic product dict from search results
+            current_keyword: The keyword being processed
 
         Returns:
             Enriched product dict with BSR and images
@@ -152,13 +157,74 @@ class AmazonScraper:
         if not product.get('url'):
             return product
 
+        asin = product.get('asin')
+
+        # Check if we've already scraped this ASIN in a previous keyword
+        if asin in self.asin_cache:
+            cached_data = self.asin_cache[asin]
+            logger.info(f"    ⟳ {asin}: DUPLICATE - fetching BSR (first seen in '{cached_data['first_keyword']}')")
+
+            try:
+                # Still fetch product page to get BSR (which should be scraped for every keyword)
+                html = await self.http_client.fetch_with_firecrawl(product['url'])
+                if not html:
+                    logger.warning(f"    ⚠ Failed to fetch BSR for {asin}")
+                    bsr_rank = None
+                    bsr_category = '[REPEATED]'
+                else:
+                    # Parse product page for BSR only
+                    bsr_rank, bsr_category, _ = self.parser.parse_product_page(html)
+                    if not bsr_rank:
+                        bsr_rank = None
+                    if not bsr_category:
+                        bsr_category = '[REPEATED]'
+
+                logger.info(f"    ✓ {asin}: BSR={bsr_rank} (duplicate)")
+
+                # Return product with repeated markers for non-variable data
+                return {
+                    'asin': asin,
+                    'url': product.get('url'),
+                    'search_position': product.get('search_position'),
+                    'title': f"[REPEATED - see '{cached_data['first_keyword']}']",
+                    'price': '[REPEATED]',
+                    'currency': '[REPEATED]',
+                    'rating': '[REPEATED]',
+                    'review_count': '[REPEATED]',
+                    'bsr_rank': bsr_rank,  # Always scraped fresh
+                    'bsr_category': bsr_category,  # Always scraped fresh
+                    'badges': product.get('badges', []),  # Varies per keyword
+                    'images': '[REPEATED]',
+                    'is_duplicate': True,
+                    'first_seen_in': cached_data['first_keyword']
+                }
+
+            except Exception as e:
+                logger.error(f"    ✗ Error fetching BSR for duplicate {asin}: {e}")
+                return {
+                    'asin': asin,
+                    'url': product.get('url'),
+                    'search_position': product.get('search_position'),
+                    'title': f"[REPEATED - see '{cached_data['first_keyword']}']",
+                    'price': '[REPEATED]',
+                    'currency': '[REPEATED]',
+                    'rating': '[REPEATED]',
+                    'review_count': '[REPEATED]',
+                    'bsr_rank': None,
+                    'bsr_category': '[REPEATED]',
+                    'badges': product.get('badges', []),
+                    'images': '[REPEATED]',
+                    'is_duplicate': True,
+                    'first_seen_in': cached_data['first_keyword']
+                }
+
         try:
-            logger.info(f"    Enriching: {product['asin']}")
+            logger.info(f"    Enriching: {asin}")
 
             # Fetch product page
             html = await self.http_client.fetch_with_firecrawl(product['url'])
             if not html:
-                logger.warning(f"    ⚠ Failed to fetch {product['asin']}")
+                logger.warning(f"    ⚠ Failed to fetch {asin}")
                 # Return with main image only
                 product['images'] = [product['main_image']] if product.get('main_image') else []
                 product.pop('main_image', None)
@@ -177,7 +243,13 @@ class AmazonScraper:
             product['images'] = images if images else ([product['main_image']] if product.get('main_image') else [])
             product.pop('main_image', None)
 
-            logger.info(f"    ✓ {product['asin']}: BSR={bsr_rank}, Images={len(product.get('images', []))}")
+            # Cache this ASIN for future keyword lookups
+            self.asin_cache[asin] = {
+                'first_keyword': current_keyword,
+                'product_data': product.copy()
+            }
+
+            logger.info(f"    ✓ {asin}: BSR={bsr_rank}, Images={len(product.get('images', []))}")
             return product
 
         except Exception as e:
@@ -190,27 +262,38 @@ class AmazonScraper:
     async def scrape_all(self) -> List[Dict]:
         """
         Scrape all keywords from configuration
+        Keywords are processed sequentially to enable ASIN deduplication
 
         Returns:
             List of results for all keywords
         """
         logger.info(f"\n{'*'*70}")
         logger.info(f"STARTING SCRAPE: {len(self.keywords)} keywords")
+        logger.info(f"ASIN Deduplication: ENABLED (sequential processing)")
         logger.info(f"{'*'*70}\n")
 
-        # Scrape all keywords in parallel
-        tasks = [self.scrape_keyword(kw) for kw in self.keywords]
-        results = await asyncio.gather(*tasks)
+        # Scrape keywords sequentially to build ASIN cache
+        results = []
+        for keyword in self.keywords:
+            result = await self.scrape_keyword(keyword)
+            results.append(result)
 
         # Save results
         self._save_results(results)
 
-        # Summary
+        # Summary with deduplication stats
         successful = sum(1 for r in results if r['status'] == 'success')
         total_products = sum(r.get('total_products', 0) for r in results)
+        duplicate_count = sum(
+            1 for r in results if r['status'] == 'success'
+            for p in r.get('products', [])
+            if p.get('is_duplicate', False)
+        )
 
         logger.info(f"\n{'='*70}")
         logger.info(f"COMPLETE: {successful}/{len(results)} keywords | {total_products} products")
+        logger.info(f"Unique ASINs: {len(self.asin_cache)}")
+        logger.info(f"Duplicate ASINs: {duplicate_count} (BSR still scraped per keyword)")
         logger.info(f"Output directory: {self.output_dir}")
         logger.info(f"{'='*70}\n")
 
@@ -242,6 +325,105 @@ class AmazonScraper:
         logger.info(f"  Consolidated: {consolidated_file}")
 
 
+async def run_multi_country(config_path: str = "config.json"):
+    """
+    Run scraper for multiple countries if 'countries' is specified in config.
+    Falls back to single country mode if 'country' is specified instead.
+
+    Args:
+        config_path: Path to configuration file
+
+    Returns:
+        Dictionary with results per country
+    """
+    # Load config to check if multi-country
+    with open(config_path) as f:
+        config = json.load(f)
+
+    # Check for multi-country vs single-country config
+    countries = config['settings'].get('countries')
+    single_country = config['settings'].get('country')
+
+    if countries and isinstance(countries, list):
+        # Multi-country mode
+        logger.info(f"\n{'#'*80}")
+        logger.info(f"# MULTI-COUNTRY MODE: {len(countries)} countries")
+        logger.info(f"{'#'*80}")
+        logger.info(f"Countries: {', '.join(c.upper() for c in countries)}")
+        logger.info(f"Keywords: {len(config['keywords'])}")
+        logger.info(f"Products per keyword: {config['settings'].get('max_products_to_scrape', 10)}")
+        logger.info(f"Concurrency: {config['settings'].get('max_concurrent', 2)}")
+        logger.info(f"{'#'*80}\n")
+
+        all_results = {}
+
+        for country in countries:
+            logger.info(f"\n{'='*80}")
+            logger.info(f"COUNTRY: {country.upper()}")
+            logger.info(f"{'='*80}\n")
+
+            # Create temporary single-country config
+            temp_config = config.copy()
+            temp_config['settings'] = config['settings'].copy()
+            temp_config['settings']['country'] = country
+            temp_config['settings'].pop('countries', None)  # Remove multi-country key
+
+            # Save temp config
+            temp_file = f"config_{country}_temp.json"
+            with open(temp_file, 'w') as f:
+                json.dump(temp_config, f, indent=2)
+
+            try:
+                # Run scraper for this country
+                scraper = AmazonScraper(temp_file)
+                results = await scraper.scrape_all()
+                all_results[country] = {
+                    'status': 'success',
+                    'results': results
+                }
+
+                # Cleanup temp file
+                Path(temp_file).unlink()
+
+            except Exception as e:
+                logger.error(f"✗ {country.upper()} failed: {e}")
+                all_results[country] = {
+                    'status': 'failed',
+                    'error': str(e)
+                }
+                Path(temp_file).unlink(missing_ok=True)
+
+        # Summary
+        logger.info(f"\n{'='*80}")
+        logger.info(f"MULTI-COUNTRY SCRAPE COMPLETE")
+        logger.info(f"{'='*80}")
+
+        successful_countries = sum(1 for r in all_results.values() if r['status'] == 'success')
+        logger.info(f"Countries: {successful_countries}/{len(countries)} successful\n")
+
+        for country, result in all_results.items():
+            if result['status'] == 'success':
+                products = sum(r.get('total_products', 0) for r in result['results'])
+                keywords_success = sum(1 for r in result['results'] if r['status'] == 'success')
+                logger.info(f"  {country.upper()}: ✓ {keywords_success}/{len(config['keywords'])} keywords, {products} products")
+            else:
+                logger.info(f"  {country.upper()}: ✗ FAILED - {result.get('error', 'Unknown error')}")
+
+        logger.info(f"\n{'='*80}\n")
+        return all_results
+
+    else:
+        # Single country mode (backward compatibility)
+        logger.info(f"\n{'*'*80}")
+        logger.info(f"SINGLE COUNTRY MODE")
+        logger.info(f"{'*'*80}\n")
+
+        scraper = AmazonScraper(config_path)
+        results = await scraper.scrape_all()
+
+        return {scraper.country: {'status': 'success', 'results': results}}
+
+
 def main():
     """Entry point for scraper"""
     # Setup logging
@@ -250,9 +432,8 @@ def main():
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
 
-    # Run scraper
-    scraper = AmazonScraper("config.json")
-    results = asyncio.run(scraper.scrape_all())
+    # Run scraper (supports both single and multi-country)
+    results = asyncio.run(run_multi_country("config.json"))
 
     print("\nDone! Check output/ folder")
 
