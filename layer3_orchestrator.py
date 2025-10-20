@@ -15,6 +15,7 @@ from typing import List, Dict, Optional
 
 from layer1_http_client import HTTPClient
 from layer2_parser import ProductParser
+from layer4_analyzer import AIAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ class AmazonScraper:
     # Country configurations
     COUNTRY_CONFIG = {
         'uk': {'domain': 'amazon.co.uk', 'currency': 'GBP', 'code': 'gb'},
+        'us': {'domain': 'amazon.com', 'currency': 'USD', 'code': 'us'},
         'es': {'domain': 'amazon.es', 'currency': 'EUR', 'code': 'es'},
         'de': {'domain': 'amazon.de', 'currency': 'EUR', 'code': 'de'},
         'fr': {'domain': 'amazon.fr', 'currency': 'EUR', 'code': 'fr'},
@@ -165,21 +167,34 @@ class AmazonScraper:
             logger.info(f"    ⟳ {asin}: DUPLICATE - fetching BSR (first seen in '{cached_data['first_keyword']}')")
 
             try:
-                # Still fetch product page to get BSR (which should be scraped for every keyword)
-                html = await self.http_client.fetch_with_firecrawl(product['url'])
-                if not html:
-                    logger.warning(f"    ⚠ Failed to fetch BSR for {asin}")
-                    bsr_rank = None
-                    bsr_category = '[REPEATED]'
-                else:
-                    # Parse product page for BSR only
-                    bsr_rank, bsr_category, _ = self.parser.parse_product_page(html)
-                    if not bsr_rank:
-                        bsr_rank = None
-                    if not bsr_category:
-                        bsr_category = '[REPEATED]'
+                # BSR Retry Logic for duplicates: Try up to 3 times to get BSR
+                max_bsr_retries = 3
+                bsr_rank = None
+                bsr_category = None
 
-                logger.info(f"    ✓ {asin}: BSR={bsr_rank} (duplicate)")
+                for attempt in range(1, max_bsr_retries + 1):
+                    # Still fetch product page to get BSR (which should be scraped for every keyword)
+                    html = await self.http_client.fetch_with_firecrawl(product['url'])
+                    if not html:
+                        logger.warning(f"    ⚠ Failed to fetch BSR for {asin} (attempt {attempt}/{max_bsr_retries})")
+                        if attempt < max_bsr_retries:
+                            await asyncio.sleep(2)
+                            continue
+                    else:
+                        # Parse product page for BSR only
+                        bsr_rank, bsr_category, bsr_subcategories, _ = self.parser.parse_product_page(html)
+
+                    # Check if BSR was extracted
+                    if bsr_rank:
+                        logger.info(f"    ✓ {asin}: BSR={bsr_rank} (duplicate, attempt {attempt})")
+                        break
+                    else:
+                        logger.warning(f"    ⚠ No BSR for duplicate {asin} (attempt {attempt}/{max_bsr_retries}) - retrying...")
+                        if attempt < max_bsr_retries:
+                            await asyncio.sleep(2)
+                        else:
+                            logger.warning(f"    ⚠ {asin}: BSR not found after {max_bsr_retries} attempts (duplicate)")
+                            bsr_category = '[REPEATED]'
 
                 # Return product with repeated markers for non-variable data
                 return {
@@ -191,8 +206,7 @@ class AmazonScraper:
                     'currency': '[REPEATED]',
                     'rating': '[REPEATED]',
                     'review_count': '[REPEATED]',
-                    'bsr_rank': bsr_rank,  # Always scraped fresh
-                    'bsr_category': bsr_category,  # Always scraped fresh
+                    'bsr_subcategories': bsr_subcategories if bsr_subcategories else [],  # Always scraped fresh
                     'badges': product.get('badges', []),  # Varies per keyword
                     'images': '[REPEATED]',
                     'is_duplicate': True,
@@ -210,8 +224,7 @@ class AmazonScraper:
                     'currency': '[REPEATED]',
                     'rating': '[REPEATED]',
                     'review_count': '[REPEATED]',
-                    'bsr_rank': None,
-                    'bsr_category': '[REPEATED]',
+                    'bsr_subcategories': [],
                     'badges': product.get('badges', []),
                     'images': '[REPEATED]',
                     'is_duplicate': True,
@@ -221,23 +234,44 @@ class AmazonScraper:
         try:
             logger.info(f"    Enriching: {asin}")
 
-            # Fetch product page
-            html = await self.http_client.fetch_with_firecrawl(product['url'])
-            if not html:
-                logger.warning(f"    ⚠ Failed to fetch {asin}")
-                # Return with main image only
-                product['images'] = [product['main_image']] if product.get('main_image') else []
-                product.pop('main_image', None)
-                return product
+            # BSR Retry Logic: Try up to 3 times to get BSR
+            max_bsr_retries = 3
+            bsr_rank = None
+            bsr_category = None
+            bsr_subcategories = []
+            images = []
 
-            # Parse product page
-            bsr_rank, bsr_category, images = self.parser.parse_product_page(html)
+            for attempt in range(1, max_bsr_retries + 1):
+                # Fetch product page
+                html = await self.http_client.fetch_with_firecrawl(product['url'])
+                if not html:
+                    logger.warning(f"    ⚠ Fetch failed for {asin} (attempt {attempt}/{max_bsr_retries})")
+                    if attempt < max_bsr_retries:
+                        await asyncio.sleep(2)  # Wait before retry
+                        continue
+                    else:
+                        # Return with main image only after all retries fail
+                        product['images'] = [product['main_image']] if product.get('main_image') else []
+                        product.pop('main_image', None)
+                        return product
 
-            # Update product with enriched data
-            if bsr_rank:
-                product['bsr_rank'] = bsr_rank
-            if bsr_category:
-                product['bsr_category'] = bsr_category
+                # Parse product page
+                bsr_rank, bsr_category, bsr_subcategories, images = self.parser.parse_product_page(html)
+
+                # Check if BSR was extracted
+                if bsr_rank:
+                    logger.info(f"    ✓ {asin}: BSR={bsr_rank}, Images={len(images)} (attempt {attempt})")
+                    break  # Success! Exit retry loop
+                else:
+                    logger.warning(f"    ⚠ No BSR found for {asin} (attempt {attempt}/{max_bsr_retries}) - retrying...")
+                    if attempt < max_bsr_retries:
+                        await asyncio.sleep(2)  # Wait before retry
+                    else:
+                        logger.warning(f"    ⚠ {asin}: BSR not found after {max_bsr_retries} attempts")
+
+            # Update product with enriched data (only bsr_subcategories, no redundant fields)
+            if bsr_subcategories:
+                product['bsr_subcategories'] = bsr_subcategories
 
             # Use product page images (more complete)
             product['images'] = images if images else ([product['main_image']] if product.get('main_image') else [])
@@ -249,7 +283,6 @@ class AmazonScraper:
                 'product_data': product.copy()
             }
 
-            logger.info(f"    ✓ {asin}: BSR={bsr_rank}, Images={len(product.get('images', []))}")
             return product
 
         except Exception as e:
@@ -410,6 +443,33 @@ async def run_multi_country(config_path: str = "config.json"):
                 logger.info(f"  {country.upper()}: ✗ FAILED - {result.get('error', 'Unknown error')}")
 
         logger.info(f"\n{'='*80}\n")
+
+        # AI analysis disabled for now
+        # Uncomment to re-enable GPT-5-nano analysis
+        """
+        # Run AI analysis on all successful country results
+        try:
+            openai_key = config['api_keys'].get('openai')
+            if openai_key and openai_key != 'YOUR_OPENAI_API_KEY_HERE':
+                logger.info(f"\n{'#'*80}")
+                logger.info(f"# LAYER 4: AI ANALYSIS (GPT-5-nano)")
+                logger.info(f"{'#'*80}\n")
+
+                analyzer = AIAnalyzer(openai_key)
+                successful_countries = [c for c, r in all_results.items() if r['status'] == 'success']
+
+                if successful_countries:
+                    output_dir = Path(config['settings']['output_dir'])
+                    report_path = analyzer.generate_multi_country_report(output_dir, successful_countries)
+                    logger.info(f"✓ AI Analysis Report: {report_path}\n")
+                else:
+                    logger.warning("No successful country results to analyze\n")
+            else:
+                logger.info("\nℹ Skipping AI analysis (OpenAI API key not configured)\n")
+        except Exception as e:
+            logger.error(f"\n✗ AI Analysis failed: {e}\n")
+        """
+
         return all_results
 
     else:

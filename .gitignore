@@ -33,10 +33,17 @@ env/
 
 # Config (contains API keys)
 config.json
+config.json.backup
+config_*_temp.json
 
 # Output files
 output/
 data/
+
+# Debug/test files
+debug_*.py
+debug_*.html
+test_layer*.py
 
 # OS
 .DS_Store

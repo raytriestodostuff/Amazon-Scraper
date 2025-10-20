@@ -31,14 +31,20 @@ class HTTPClient:
             amazon_url: Direct Amazon product/search URL
 
         Returns:
-            ScraperAPI proxy URL with authentication and country routing
+            ScraperAPI proxy URL with authentication, country routing, and English language
         """
         params = {
             'api_key': self.scraperapi_key,
             'url': amazon_url,
             'render': 'true',
-            'country_code': self.country_code
+            'country_code': self.country_code,
+            'custom_headers': 'true'  # Enable custom headers to set language
         }
+
+        # Add Accept-Language header to request English content
+        # This will make Amazon return English BSR labels while using IT/DE proxy
+        params['accept_language'] = 'en-US,en;q=0.9'
+
         return f"http://api.scraperapi.com/?{urlencode(params)}"
 
     async def fetch_with_firecrawl(self, url: str) -> Optional[str]:
@@ -87,6 +93,16 @@ class HTTPClient:
                             if response.status == 200:
                                 data = await response.json()
                                 html = data.get('data', {}).get('html', '')
+
+                                # Check for suspiciously small HTML (likely error/empty response)
+                                if len(html) < 1000:
+                                    logger.warning(f"  ! Suspicious HTML size: {len(html)} chars - attempt {attempt + 1}/3")
+                                    if attempt < 2:
+                                        continue  # Retry
+                                    else:
+                                        logger.error(f"  ✗ Empty HTML after 3 attempts")
+                                        return html  # Return anyway, parser will handle
+
                                 logger.info(f"  + Fetched: {len(html)} chars")
                                 return html
                             elif response.status == 429:
