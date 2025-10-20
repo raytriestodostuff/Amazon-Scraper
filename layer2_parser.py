@@ -157,11 +157,31 @@ class ProductParser:
         """
         Extract number of reviews (multi-language)
 
-        UK format: <a aria-label="12,581 ratings"><span>12,581</span></a>
+        UK/US format: <a aria-label="12,581 ratings"><span>12,581</span></a>
+        US alt format: <a aria-label="3,032 ratings"><span>(3K)</span></a>
         German format: <a aria-label="320 Bewertungen">(320)</a>
         """
-        # Method 1: Look for <span> inside reviews link with class s-underline-text
-        # This is the PRIMARY method for UK/US markets
+        # Method 1: Look for US/UK aria-label with "ratings" (exact format: "X ratings")
+        # Example: aria-label="3,032 ratings" (US specific - has full count in aria-label)
+        # This is checked FIRST for US market products
+        # Pattern must match ONLY "X ratings", NOT "X out of 5 stars, rating details"
+        review_link = div.find('a', {'aria-label': re.compile(r'^[\d,\.]+\s+ratings?$', re.I)})
+        if review_link:
+            aria_text = review_link.get('aria-label', '')
+            # Extract first number from aria-label
+            match = re.search(r'([\d,\.]+)', aria_text)
+            if match:
+                try:
+                    count_str = match.group(1).replace(',', '').replace('.', '')
+                    count = int(count_str)
+                    # Sanity check: review counts are typically between 1 and 1,000,000
+                    if 1 <= count < 1000000:
+                        return count
+                except ValueError:
+                    pass
+
+        # Method 2: Look for <span> inside reviews link with class s-underline-text
+        # This is the PRIMARY method for UK markets (actual number visible)
         reviews_block = div.find('div', {'data-cy': 'reviews-block'})
         if reviews_block:
             # Find the ratings link span
@@ -180,11 +200,11 @@ class ProductParser:
                     except ValueError:
                         pass
 
-        # Method 2: Look for German-style aria-label with "Bewertungen"
+        # Method 3: Look for German-style aria-label with "Bewertungen"
         # Example: aria-label="320 Bewertungen"
-        review_link = div.find('a', {'aria-label': re.compile(r'\d+.*Bewertungen', re.I)})
-        if review_link:
-            aria_text = review_link.get('aria-label', '')
+        review_link_de = div.find('a', {'aria-label': re.compile(r'\d+.*Bewertungen', re.I)})
+        if review_link_de:
+            aria_text = review_link_de.get('aria-label', '')
             # Extract first number from aria-label
             match = re.search(r'([\d,\.]+)', aria_text)
             if match:
@@ -391,18 +411,31 @@ class ProductParser:
                 ul_list = parent.find('ul', class_=re.compile(r'a-unordered-list|a-nostyle'))
 
                 if ul_list:
-                    # Process each <li> separately (German structure)
+                    # Process each <li> separately
                     li_items = ul_list.find_all('li')
                     subcategories = []
 
-                    # Extract ALL subcategories (ALWAYS skip index 0 - it's the main category)
-                    for idx, li in enumerate(li_items):
-                        # ALWAYS skip the first item (index 0) - it's the main category
-                        # Amazon BSR structure: [0]=Main Category (high rank), [1+]=Subcategories (lower ranks)
-                        if idx == 0:
-                            continue
+                    # Detect format by checking if parent text contains main category rank
+                    # US format: Main rank in parent text, <ul> contains ONLY subcategories
+                    # EU/UK format: <ul> contains main category (index 0) + subcategories (index 1+)
+                    parent_text = parent.get_text()
+                    # Check if parent text BEFORE the <ul> contains the main rank
+                    # We need to get text ONLY from parent, not from the ul children
+                    parent_text_only = parent.get_text(strip=True)
+                    ul_text = ul_list.get_text(strip=True) if ul_list else ''
+                    parent_text_without_ul = parent_text_only.replace(ul_text, '').strip()
 
+                    # US format has main rank in parent text (before the <ul>)
+                    has_main_rank_in_parent = bool(re.search(r'(?:Best Sellers Rank|Bestseller-Rang)[:\s]*#?([\d,\.]+)\s+in\s+', parent_text_without_ul, re.I))
+
+                    # Extract ALL subcategories
+                    for idx, li in enumerate(li_items):
                         li_text = li.get_text()
+
+                        # EU/UK format: ALWAYS skip first item (index 0) - it's the main category
+                        # US format: All items in <ul> are subcategories (has_main_rank_in_parent=True)
+                        if not has_main_rank_in_parent and idx == 0:
+                            continue
 
                         # Extract rank and category
                         match = re.search(r'(?:Nr\.|n\.|#|nº|º)?\.?\s*([\d,\.]+)\s+(?:in|en|dans|nei)\s+(.+?)(?:\(|$)', li_text, re.I)
@@ -416,6 +449,10 @@ class ProductParser:
                                 category_clean = match.group(2).strip()
                                 category_clean = re.sub(r'\s+', ' ', category_clean)
                                 category_clean = re.sub(r'(?:Siehe|See|Ver|Vedi) Top.*', '', category_clean, flags=re.I).strip()
+
+                                # Skip if category is empty after cleaning
+                                if not category_clean:
+                                    continue
 
                                 # Add to subcategories list
                                 subcategories.append({"rank": rank_num, "category": category_clean})

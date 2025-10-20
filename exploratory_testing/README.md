@@ -11,14 +11,21 @@ This folder contains structured test documentation for the Amazon Scraper v2 pro
 ## Latest Test Results
 
 ### Most Recent Run
-- **Date**: 2025-10-14 15:31:44
-- **Test**: UK Market Multi-Keyword Test (UK-001)
-- **Status**: ✅ **PASSED WITH EXCELLENCE**
-- **Keywords**: 8 (berberine products)
-- **Products**: 80/80 extracted (100%)
-- **BSR Success**: 97.5% (highest achieved!)
-- **Execution Time**: 10m 42s (~1m 20s per keyword)
-- **Log**: `test_logs/20251014_153144_uk_multi_keyword_test.md`
+- **Date**: 2025-10-20 13:53
+- **Test**: US Review Count Extraction Fix
+- **Status**: ✅ **PASSED**
+- **Issue Fixed**: US market showing 0 or incorrect review counts (extracting rating instead)
+- **Products Tested**: 5 US products
+- **Success Rate**: 100% (5/5 products now show correct review counts)
+- **Log**: `test_logs/20251020_135300_us_review_count_fix.md`
+
+### Previous Run
+- **Date**: 2025-10-20 01:12
+- **Test**: Final Fixes - All Three Issues Resolved
+- **Status**: ✅ **PASSED**
+- **Issues Fixed**: Review count, BSR subcategories, and image extraction
+- **Markets Validated**: UK, Germany, Spain, Italy
+- **Log**: `test_logs/20251020_011234_final_fixes_test.md`
 
 ### Key Findings
 1. **Exceptional BSR Rate**: 97.5% extraction (best performance to date)
@@ -70,11 +77,13 @@ Each test should include:
 
 ## Quick Links
 
-### Test Logs
+### Test Logs (Most Recent)
+- **[US Review Count Fix (2025-10-20)](test_logs/20251020_135300_us_review_count_fix.md) - US market regex fix** ⭐
+- **[Final Fixes Test (2025-10-20)](test_logs/20251020_011234_final_fixes_test.md) - Multi-market validation** ⭐
 - [Spain Test #1 (ES-001)](test_logs/20251014_spain_test.md) - 1 keyword
 - [Spain Test #2 (ES-002)](test_logs/20251014_130600_spain_run.md) - Consistency check
 - [Layered Architecture Test (ARCH-001)](test_logs/20251014_layered_architecture_test.md)
-- **[UK Multi-Keyword Test (UK-001)](test_logs/20251014_153144_uk_multi_keyword_test.md) - 8 keywords, 80 products** ⭐
+- [UK Multi-Keyword Test (UK-001)](test_logs/20251014_153144_uk_multi_keyword_test.md) - 8 keywords, 80 products
 
 ### Test Plans
 - [Multi-Country Test Plan](test_plans/multi_country_test_plan.md)

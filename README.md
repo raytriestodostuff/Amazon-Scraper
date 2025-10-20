@@ -4,42 +4,71 @@ A layered scraper that extracts product data from Amazon search results across m
 
 ## Features
 
-- ✅ **Multi-country support** - UK, US, Spain, Germany, France, Italy
-- ✅ **Complete product data** - Title, price, rating, reviews, BSR, badges, images
-- ✅ **ASIN deduplication** - Tracks duplicate products across keywords
-- ✅ **Search position tracking** - Records product ranking per keyword
-- ✅ **Multi-language parsing** - English, Spanish, German, French, Italian
+**Multi-Market Support**
+- Supports 5 Amazon markets: US, UK, Germany, Spain, Italy
+- Automatic multi-language parsing (English, German, Spanish, Italian)
+- Country-specific currency and domain handling
+- Single-country or multi-country scraping modes
+
+**Comprehensive Product Data Extraction**
+- ASIN, title, price, currency, rating, review count
+- Best Sellers Rank (BSR) with subcategory support
+- Product badges (Best Seller, Amazon's Choice, etc.)
+- Product images 
+- Search position tracking per keyword
+- Ignores inorganic search results
+
+**ASIN Deduplication**
+- Tracks products appearing across multiple keywords
+- Marks duplicate products to avoid redundant API calls
+- BSR always scraped fresh even for duplicates
+
+**Parallel Processing**
+- Configurable concurrency for product page enrichment
+- Semaphore-based rate limiting
+- Retry logic with exponential backoff
 
 ## Dependencies
 
-Install required packages:
+**Python Version Required:** Python 3.7 or higher
+
+Install all required packages:
 
 ```bash
-pip install aiohttp beautifulsoup4
+pip install aiohttp beautifulsoup4 openai
 ```
+
+**Required Packages:**
+- `aiohttp` - Async HTTP client for making API requests to Firecrawl
+- `beautifulsoup4` - HTML parsing library for extracting product data
+- `openai` - OpenAI API client (only needed if using layer4_analyzer.py)
+
+**No additional dependencies are needed** - all other modules used are part of Python's standard library:
+- `asyncio`, `json`, `logging`, `re`, `urllib.parse`, `datetime`, `pathlib`
 
 ## Configuration
 
-Edit `config.json` with your API keys and settings:
+Create / Edit `config.json` with your API keys and settings:
 
 ```json
 {
   "api_keys": {
-    "scraperapi": "YOUR_SCRAPERAPI_KEY",
-    "firecrawl": "YOUR_FIRECRAWL_KEY"
+    "scraperapi": "Scraper API here",
+    "firecrawl": "Firecrawl API here",
+    "openai": "OpenAi API here"
   },
   "settings": {
-    "countries": ["uk"],
-    "max_concurrent": 2,
-    "max_products_to_scrape": 10,
+    "countries": ["us", "uk", "es", "de", "it"],
+    "max_concurrent": 5,
+    "max_products_to_scrape": 5,
     "output_dir": "output"
   },
   "keywords": [
-    "wireless headphones",
-    "protein powder",
-    "gaming laptop"
+    "berberine 1500mg",
+    "berberina"
   ]
 }
+
 ```
 
 ### Configuration Options
@@ -49,10 +78,10 @@ Edit `config.json` with your API keys and settings:
 - `firecrawl` - Your Firecrawl key (get from https://firecrawl.dev)
 
 **Settings:**
-- `countries` - Array of country codes for multi-country mode: `["uk", "us", "es", "de", "fr", "it"]`
+- `countries` - Array of country codes for multi-country mode: `["uk", "us", "es", "de", "it"]`
 - `country` - Single country code for single-country mode: `"uk"`
-- `max_concurrent` - Concurrent product fetches per keyword (recommended: 2-5)
-- `max_products_to_scrape` - Products to scrape per keyword (max: 10)
+- `max_concurrent` - Concurrent product fetches per keyword 
+- `max_products_to_scrape` - Products to scrape per keyword 
 - `output_dir` - Output directory (default: "output")
 
 **Keywords:**
@@ -100,14 +129,6 @@ python layer3_orchestrator.py
 
 **Note**: Multi-country mode processes countries sequentially. Each country resets the ASIN deduplication cache.
 
-### Estimated Runtime
-
-Based on testing with concurrency=5:
-- **1 country** (8 keywords, 10 products each): ~5 minutes
-- **2 countries**: ~10-11 minutes
-- **4 countries**: ~20-22 minutes
-
-Adjust `max_concurrent` to balance speed vs API rate limits.
 
 ## Expected Output
 
@@ -191,28 +212,17 @@ The scraper uses a 3-layer architecture:
 
 ### Missing Dependencies
 ```bash
-pip install aiohttp beautifulsoup4
+pip install aiohttp beautifulsoup4 openai
 ```
 
 ### API Errors
 - Check ScraperAPI dashboard: https://scraperapi.com/dashboard
 - Check Firecrawl dashboard: https://firecrawl.dev/dashboard
+- Ensure enough credits are present for use!!!
 
 ### No Products Extracted
-- Verify country code is valid: `["uk", "us", "es", "de", "fr", "it"]`
-- Check that keywords are in English
-- Reduce `max_concurrent` to 1 if getting rate limit errors
-
-### Missing BSR Data
-- BSR extraction rates vary by country
-- Expected rates: UK/US (95-100%), Spain (90%), Germany (55-85%)
-- Some products don't have BSR rankings
-
-## Documentation
-
-- **[API_USAGE.md](API_USAGE.md)** - API architecture and request flow
-- **[exploratory_testing/](exploratory_testing/)** - Test logs and findings
-
+- Verify country code is valid: `["uk", "us", "es", "de", "it"]`
+- Reduce `max_concurrent` if getting rate limit errors
 ---
 
 **Ready to scrape!** 🚀

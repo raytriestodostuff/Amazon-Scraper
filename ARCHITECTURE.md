@@ -4,6 +4,36 @@
 
 The scraper has been refactored into a clean, modular 3-layer architecture for better readability, maintainability, and debugging.
 
+## Key Features
+
+**Multi-Market Support**
+- Supports 5 Amazon markets: US, UK, Germany, Spain, Italy
+- Automatic multi-language parsing (English, German, Spanish, French, Italian)
+- Country-specific currency and domain handling
+
+**Comprehensive Product Data Extraction**
+- ASIN, title, price, currency, rating, review count
+- Best Sellers Rank (BSR) with subcategory support
+- Product badges (Best Seller, Amazon's Choice, etc.)
+- Multiple product images (5-8 per product)
+- Search position tracking per keyword
+
+**ASIN Deduplication**
+- Tracks products appearing across multiple keywords
+- Marks duplicate products to avoid redundant API calls
+- BSR always scraped fresh even for duplicates
+
+**Robust Extraction Logic**
+- Multiple fallback methods for BSR extraction (7 methods)
+- Multi-format review count extraction (handles abbreviated formats like "3K")
+- Sponsored product filtering
+- Image deduplication across color variants
+
+**Parallel Processing**
+- Configurable concurrency for product page enrichment
+- Semaphore-based rate limiting
+- Retry logic with exponential backoff
+
 ## Architecture Diagram
 
 ```
@@ -156,91 +186,5 @@ amazon_scraper_v2/
     └── findings/
 ```
 
-## Running the Scraper
 
-### Using New Layered Architecture (Recommended)
-```bash
-python layer3_orchestrator.py
-```
 
-### Using Original Monolithic Version
-```bash
-python scraper.py
-```
-
-## Benefits of Layered Architecture
-
-### 1. **Readability**
-- Each file has a single, clear purpose
-- Functions are shorter and more focused
-- Easy to understand data flow
-
-### 2. **Maintainability**
-- Changes to HTTP logic don't affect parsing
-- Changes to parsing don't affect workflow
-- Easy to locate bugs by layer
-
-### 3. **Testability**
-- Layer 1: Mock HTTP responses
-- Layer 2: Test with static HTML files
-- Layer 3: Test workflow with mocked layers
-
-### 4. **Reusability**
-- Parser can be used independently
-- HTTP client can fetch any URL
-- Easy to add new features per layer
-
-### 5. **Debugging**
-- Clear separation of concerns
-- Easy to add logging per layer
-- Can test layers independently
-
-## Adding New Features
-
-### Example: Add new data field
-1. **Layer 2** (`layer2_parser.py`): Add extraction method
-2. **Layer 3** (`layer3_orchestrator.py`): No changes needed
-3. **Layer 1** (`layer1_http_client.py`): No changes needed
-
-### Example: Switch API provider
-1. **Layer 1** (`layer1_http_client.py`): Update HTTP methods
-2. **Layer 2** (`layer2_parser.py`): No changes needed
-3. **Layer 3** (`layer3_orchestrator.py`): No changes needed
-
-### Example: Change output format
-1. **Layer 3** (`layer3_orchestrator.py`): Update `_save_results()`
-2. **Layer 1** (`layer1_http_client.py`): No changes needed
-3. **Layer 2** (`layer2_parser.py`): No changes needed
-
-## Multi-Language Support
-
-The parser handles 5 languages automatically:
-- **English** (UK): amazon.co.uk
-- **Spanish** (Spain): amazon.es
-- **German** (Germany): amazon.de
-- **French** (France): amazon.fr
-- **Italian** (Italy): amazon.it
-
-Language detection is automatic based on HTML content. No manual translation needed.
-
-## Configuration
-
-Edit `config.json` to customize:
-- **country**: 'uk', 'es', 'de', 'fr', or 'it'
-- **keywords**: List of search terms (always in English)
-- **max_concurrent**: Concurrency limit (1-3 recommended)
-- **max_products_to_scrape**: Products per keyword (default 10)
-
-## Troubleshooting
-
-### Issue: Rate limit errors (429)
-**Solution**: Reduce `max_concurrent` in config.json to 1
-
-### Issue: Missing BSR data
-**Layer 2**: Add more regex patterns to `_extract_bsr()`
-
-### Issue: API timeout
-**Layer 1**: Increase timeout in `fetch_with_firecrawl()`
-
-### Issue: Wrong data extracted
-**Layer 2**: Debug with `logger.debug()` in parser methods
